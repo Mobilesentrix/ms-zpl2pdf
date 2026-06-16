@@ -1,0 +1,290 @@
+# ZPL2PDF - OpenAPI Specification
+# Generated to match the actual implementation in src/Presentation/Program.cs
+# (ZPL2PDF v3.1.x REST API).
+
+openapi: 3.1.0
+info:
+  title: ZPL2PDF API
+  version: 3.1.3
+  description: >
+    ZPL2PDF is a fast, open-source ZPL (Zebra Programming Language) label
+    rendering engine. It exposes a small JSON REST API that converts ZPL
+    markup to PDF or PNG. Results are returned base64-encoded inside a JSON
+    response body (not as raw binary).
+
+
+    Start the server with `ZPL2PDF --api` (or `--web`). It listens on
+    `0.0.0.0:5000` by default; host/port are configurable with
+    `--host` and `--port`. All endpoints are served under the `/api` prefix.
+
+
+    CORS is enabled with an allow-all default policy. The server itself
+    implements no authentication.
+  license:
+    name: MIT
+    identifier: MIT
+  contact:
+    email: ravi@mobilesentrix.com
+
+servers:
+  - url: http://localhost:5000
+    description: Local server (default host/port)
+  - url: https://api.dev.msrestapi.com/zpl2pdf
+    description: Dev gateway
+
+tags:
+  - name: Health
+    description: Service health check.
+  - name: Conversion
+    description: ZPL to PDF/PNG conversion.
+
+paths:
+  /api/health:
+    get:
+      operationId: GetHealth
+      summary: Health check.
+      description: >
+        Returns a static payload confirming the API server is running.
+      tags:
+        - Health
+      responses:
+        "200":
+          description: Service is up.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Health"
+              example:
+                status: ok
+                service: ZPL2PDF API
+
+  /api/convert:
+    post:
+      operationId: ConvertLabel
+      summary: Convert ZPL markup to PDF or PNG.
+      description: >
+        Accepts a JSON body containing ZPL content and conversion options,
+        and returns the rendered result base64-encoded in a JSON response.
+
+
+        Provide the ZPL either as a single string in `zpl`, or as an array
+        of strings in `zplArray` (each element may itself contain one or
+        more `^XA...^XZ` labels). Exactly one of the two must be supplied.
+
+
+        Output shape depends on `format`:
+
+        - `pdf`  -> result in the `pdf` field (single multi-page PDF).
+
+        - `png`  -> single label returns `image`; multiple labels return
+          `images` (an array, one entry per label).
+
+
+        If `width`/`height` are omitted (or 0) they are extracted from the
+        ZPL's own dimension commands when possible.
+      tags:
+        - Conversion
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ConvertRequest"
+            examples:
+              singlePdf:
+                summary: Single label to PDF
+                value:
+                  zpl: "^XA^FO50,50^A0N,50,50^FDHello World^FS^XZ"
+                  format: pdf
+              pngWithDimensions:
+                summary: PNG with explicit dimensions
+                value:
+                  zpl: "^XA^FO50,50^A0N,50,50^FDHello World^FS^XZ"
+                  format: png
+                  width: 10.0
+                  height: 5.0
+                  unit: cm
+                  dpi: 300
+              batch:
+                summary: Multiple ZPL strings via zplArray
+                value:
+                  zplArray:
+                    - "^XA^FO50,50^A0N,50,50^FDLabel 1^FS^XZ"
+                    - "^XA^FO50,50^A0N,50,50^FDLabel 2^FS^XZ"
+                  format: png
+      responses:
+        "200":
+          description: Conversion successful.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConvertResponse"
+              examples:
+                pdf:
+                  summary: PDF result
+                  value:
+                    success: true
+                    format: pdf
+                    pdf: "JVBERi0xLjcK...base64..."
+                    pages: 1
+                    message: Conversion successful
+                pngSingle:
+                  summary: Single PNG result
+                  value:
+                    success: true
+                    format: png
+                    image: "iVBORw0KGgo...base64..."
+                    pages: 1
+                    message: Conversion successful
+                pngMultiple:
+                  summary: Multiple PNG result
+                  value:
+                    success: true
+                    format: png
+                    images:
+                      - "iVBORw0KGgo...base64..."
+                      - "iVBORw0KGgo...base64..."
+                    pages: 2
+                    message: Conversion successful
+        "400":
+          description: >
+            Invalid request. Returned when ZPL content is missing, `format`
+            is not `pdf`/`png`, `renderer` is invalid, or no images could be
+            generated from the supplied ZPL.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConvertResponse"
+              example:
+                success: false
+                message: "ZPL content is required (use 'zpl' or 'zplArray' field)"
+        "500":
+          description: Internal error raised during conversion.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConvertResponse"
+              example:
+                success: false
+                message: "Conversion error: <details>"
+
+components:
+  schemas:
+    Health:
+      type: object
+      description: Static health payload returned by GET /api/health.
+      properties:
+        status:
+          type: string
+          description: Always `ok` while the server is running.
+          example: ok
+        service:
+          type: string
+          description: Service identifier.
+          example: ZPL2PDF API
+      required:
+        - status
+        - service
+
+    ConvertRequest:
+      type: object
+      description: Conversion request body for POST /api/convert.
+      properties:
+        zpl:
+          type: string
+          description: >
+            ZPL content to convert. May contain multiple labels separated by
+            `^XA...^XZ`. Required if `zplArray` is not provided.
+          example: "^XA^FO50,50^A0N,50,50^FDHello World^FS^XZ"
+        zplArray:
+          type: array
+          items:
+            type: string
+          description: >
+            Array of ZPL strings to convert. Each element may contain one or
+            more labels. Required if `zpl` is not provided.
+        format:
+          type: string
+          enum:
+            - pdf
+            - png
+          default: pdf
+          description: Output format.
+        width:
+          type: number
+          format: double
+          description: >
+            Label width in `unit`. Omit (or 0) to extract from the ZPL.
+        height:
+          type: number
+          format: double
+          description: >
+            Label height in `unit`. Omit (or 0) to extract from the ZPL.
+        unit:
+          type: string
+          enum:
+            - mm
+            - cm
+            - in
+          default: mm
+          description: Unit of measurement for `width`/`height`.
+        dpi:
+          type: integer
+          format: int32
+          default: 203
+          description: >
+            Print density in DPI. Common values: 152, 203, 300, 600.
+        renderer:
+          type: string
+          enum:
+            - offline
+            - labelary
+            - auto
+          default: offline
+          description: >
+            Rendering engine. `offline` renders locally; `labelary` uses the
+            Labelary service; `auto` tries Labelary and falls back to the
+            offline pipeline.
+      # The server requires exactly one of `zpl` / `zplArray`.
+      anyOf:
+        - required: [zpl]
+        - required: [zplArray]
+
+    ConvertResponse:
+      type: object
+      description: >
+        Response body for POST /api/convert. Used for both success and error
+        responses. On success the populated payload field depends on `format`
+        and label count; on error only `success` and `message` are set.
+      properties:
+        success:
+          type: boolean
+          description: Whether the conversion succeeded.
+        format:
+          type: string
+          description: Output format that was produced (`pdf` or `png`).
+        pdf:
+          type: string
+          description: Base64-encoded PDF. Present when `format` is `pdf`.
+        image:
+          type: string
+          description: >
+            Base64-encoded PNG. Present when `format` is `png` and exactly
+            one label was produced.
+        images:
+          type: array
+          items:
+            type: string
+          description: >
+            Base64-encoded PNGs, one per label. Present when `format` is
+            `png` and more than one label was produced.
+        pages:
+          type: integer
+          format: int32
+          description: Number of pages/labels processed.
+        message:
+          type: string
+          description: Human-readable success or error message.
+      required:
+        - success
+        - message
